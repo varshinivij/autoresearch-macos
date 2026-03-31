@@ -51,10 +51,10 @@ DATA_DIR = os.path.join(CACHE_DIR, "data")
 TOKENIZER_DIR = os.path.join(CACHE_DIR, "tokenizer")
 BASE_URL = "https://huggingface.co/datasets/karpathy/climbmix-400b-shuffle/resolve/main"
 MAX_SHARD = 6542 # the last datashard is shard_06542.parquet
-VAL_SHARD = MAX_SHARD  # pinned validation shard (shard_06542)
+VAL_SHARD = MAX_SHARD  # pinned validation shard (shard_06542) --> only last shard for validation
 VAL_FILENAME = f"shard_{VAL_SHARD:05d}.parquet"
 VOCAB_SIZE = 8192
-
+#MPS is Apple’s GPU acceleration framework.
 # BPE split pattern (GPT-4 style, with \p{N}{1,2} instead of {1,3})
 SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,2}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
 
@@ -78,10 +78,10 @@ def download_single_shard(index):
         try:
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
-            temp_path = filepath + ".tmp"
+            temp_path = filepath + ".tmp" #temp files are intended for short term storage, while editing the file
             with open(temp_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
+                    if chunk: #stores datasets in chunks of memory
                         f.write(chunk)
             os.rename(temp_path, filepath)
             print(f"  Downloaded {filename}")
@@ -95,7 +95,7 @@ def download_single_shard(index):
                     except OSError:
                         pass
             if attempt < max_attempts:
-                time.sleep(2 ** attempt)
+                time.sleep(2 ** attempt) #exponential backoff: increasing waittimes after failures 
     return False
 
 
@@ -116,7 +116,7 @@ def download_data(num_shards, download_workers=8):
     needed = len(ids) - existing
     print(f"Data: downloading {needed} shards ({existing} already exist)...")
 
-    workers = max(1, min(download_workers, needed))
+    workers = max(1, min(download_workers, needed)) #creates multiple processes to download the dataset
     with Pool(processes=workers) as pool:
         results = pool.map(download_single_shard, ids)
 
@@ -190,7 +190,8 @@ def train_tokenizer():
         pickle.dump(enc, f)
 
     t1 = time.time()
-    print(f"Tokenizer: trained in {t1 - t0:.1f}s, saved to {tokenizer_pkl}")
+    print(f"Tokenizer: trained in {t1 - t0:.1f}s, saved to {tokenizer_pkl}") 
+    #training your own tokenizer: optimizes language model performance by creating a vocabulary tailored to your specific dataset,
 
     # --- Build token_bytes lookup for BPB evaluation ---
     print("Tokenizer: building token_bytes lookup...")
@@ -401,3 +402,18 @@ if __name__ == "__main__":
     train_tokenizer()
     print()
     print("Done! Ready to train.")
+
+
+"""
+Raw text (parquet shards)
+        ↓
+Stream documents
+        ↓
+Train BPE tokenizer
+        ↓
+Convert to fast encoding (tiktoken)
+        ↓
+Save tokenizer + metadata
+        ↓
+Use for model training
+"""
